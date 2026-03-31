@@ -3,13 +3,14 @@ package job
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
-	"log"
 	"os"
-	"os/exec"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
+	"x-ui/web/service"
 
 	"x-ui/database"
 	"x-ui/database/model"
@@ -18,14 +19,20 @@ import (
 )
 
 type CheckClientIpJob struct {
-	lastClear     int64
-	disAllowedIps []string
+	lastClear         int64
+	disAllowedIps     []string
+	inboundService    service.InboundService
+	xrayService       service.XrayService
+	tgbotService      service.Tgbot
+	ipLimitCandidates map[string]time.Time
 }
 
 var job *CheckClientIpJob
 
 func NewCheckClientIpJob() *CheckClientIpJob {
-	job = new(CheckClientIpJob)
+	job = &CheckClientIpJob{
+		ipLimitCandidates: make(map[string]time.Time),
+	}
 	return job
 }
 
@@ -34,19 +41,18 @@ func (j *CheckClientIpJob) Run() {
 		j.lastClear = time.Now().Unix()
 	}
 
+	for email, timestamp := range j.ipLimitCandidates {
+		if time.Since(timestamp) > 2*time.Minute {
+			delete(j.ipLimitCandidates, email)
+		}
+	}
+
 	shouldClearAccessLog := false
 	iplimitActive := j.hasLimitIp()
-	f2bInstalled := j.checkFail2BanInstalled()
 	isAccessLogAvailable := j.checkAccessLogAvailable(iplimitActive)
 
-	if iplimitActive {
-		if f2bInstalled && isAccessLogAvailable {
-			shouldClearAccessLog = j.processLogFile()
-		} else {
-			if !f2bInstalled {
-				logger.Warning("[LimitIP] Fail2Ban is not installed, Please install Fail2Ban from the x-ui bash menu.")
-			}
-		}
+	if iplimitActive && isAccessLogAvailable {
+		shouldClearAccessLog = j.processLogFile()
 	}
 
 	if shouldClearAccessLog || (isAccessLogAvailable && time.Now().Unix()-j.lastClear > 3600) {
@@ -163,13 +169,6 @@ func (j *CheckClientIpJob) processLogFile() bool {
 	return shouldCleanLog
 }
 
-func (j *CheckClientIpJob) checkFail2BanInstalled() bool {
-	cmd := "fail2ban-client"
-	args := []string{"-h"}
-	err := exec.Command(cmd, args...).Run()
-	return err == nil
-}
-
 func (j *CheckClientIpJob) checkAccessLogAvailable(iplimitActive bool) bool {
 	accessLogPath, err := xray.GetAccessLogPath()
 	if err != nil {
@@ -249,44 +248,64 @@ func (j *CheckClientIpJob) updateInboundClientIps(inboundClientIps *model.Inboun
 		return false
 	}
 
-	settings := map[string][]model.Client{}
+	settings := map[string]interface{}{}
 	json.Unmarshal([]byte(inbound.Settings), &settings)
-	clients := settings["clients"]
-	shouldCleanLog := false
-	j.disAllowedIps = []string{}
-
-	logIpFile, err := os.OpenFile(xray.GetIPLimitLogPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		logger.Errorf("failed to open IP limit log file: %s", err)
+	clientsRaw, ok := settings["clients"].([]interface{})
+	if !ok {
+		logger.Debug("clients not found in settings")
 		return false
 	}
-	defer logIpFile.Close()
-	log.SetOutput(logIpFile)
-	log.SetFlags(log.LstdFlags)
 
-	for _, client := range clients {
-		if client.Email == clientEmail {
-			limitIp := client.LimitIP
+	shouldCleanLog := false
+	changed := false
+
+	for i := range clientsRaw {
+		clientMap, ok := clientsRaw[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if clientMap["email"] == clientEmail {
+			limitIpFloat, _ := clientMap["limitIp"].(float64)
+			limitIp := int(limitIpFloat)
+			enable, _ := clientMap["enable"].(bool)
 
 			if limitIp > 0 && inbound.Enable {
 				shouldCleanLog = true
 
-				if limitIp < len(ips) {
-					j.disAllowedIps = append(j.disAllowedIps, ips[limitIp:]...)
-					for i := limitIp; i < len(ips); i++ {
-						log.Printf("[LIMIT_IP] Email = %s || SRC = %s", clientEmail, ips[i])
+				if limitIp < len(ips) && enable {
+					if firstSeen, ok := j.ipLimitCandidates[clientEmail]; ok {
+						if time.Since(firstSeen) > 1*time.Minute {
+							clientMap["enable"] = false
+							changed = true
+							delete(j.ipLimitCandidates, clientEmail)
+							j.tgbotService.SendMsgToTgbotAdmins(fmt.Sprintf("Client %s reached IP limit %d for more than 1 minute, disabling. "+
+								"IPs: %s", clientEmail, limitIp, strings.Join(ips, ", ")))
+						}
+					} else {
+						j.ipLimitCandidates[clientEmail] = time.Now()
+						j.tgbotService.SendMsgToTgbotAdmins(fmt.Sprintf("Client %s reached IP limit %d adding to candidates for blocking. "+
+							"IPs: %s", clientEmail, limitIp, strings.Join(ips, ", ")))
 					}
 				}
 			}
+			break
 		}
 	}
 
-	sort.Strings(j.disAllowedIps)
+	if changed {
+		newSettings, err := json.Marshal(settings)
+		if err != nil {
+			logger.Error("failed to marshal settings:", err)
+			return false
+		}
+		inbound.Settings = string(newSettings)
 
-	if len(j.disAllowedIps) > 0 {
-		logger.Debug("disAllowedIps:", j.disAllowedIps)
+		_, _, err = j.inboundService.UpdateInbound(inbound)
+		if err != nil {
+			logger.Error("failed to save inbound:", err)
+			return false
+		}
 	}
-
 	db := database.GetDB()
 	err = db.Save(inboundClientIps).Error
 	if err != nil {
