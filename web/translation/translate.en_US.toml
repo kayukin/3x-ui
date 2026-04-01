@@ -490,6 +490,8 @@
 "statsOutboundUplinkDesc" = "Enables the statistics collection for upstream traffic of all outbound proxies."
 "statsOutboundDownlink" = "Outbound Download Statistics"
 "statsOutboundDownlinkDesc" = "Enables the statistics collection for downstream traffic of all outbound proxies."
+"BanStrategy" = "IP limit strategy"
+"BanStrategyDesc" = "Choosing a strategy for blocking IP limit exceedance."
 
 [pages.xray.rules]
 "first" = "First"

@@ -490,6 +490,8 @@
 "statsOutboundUplinkDesc" = "Tüm giden proxy'lerin yükleme trafiği için istatistik toplamayı etkinleştirir."
 "statsOutboundDownlink" = "Giden İndirme İstatistikleri"
 "statsOutboundDownlinkDesc" = "Tüm giden proxy'lerin indirme trafiği için istatistik toplamayı etkinleştirir."
+"BanStrategy" = "IP limit strategy"
+"BanStrategyDesc" = "Choosing a strategy for blocking IP limit exceedance."
 
 [pages.xray.rules]
 "first" = "İlk"

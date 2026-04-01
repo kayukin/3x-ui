@@ -490,6 +490,8 @@
 "statsOutboundUplinkDesc" = "Включает сбор статистики для исходящего трафика всех исходящих прокси."
 "statsOutboundDownlink" = "Статистика исходящего даунлинка"
 "statsOutboundDownlinkDesc" = "Включает сбор статистики для входящего трафика всех исходящих прокси."
+"BanStrategy" = "Стратегия ограничения IP"
+"BanStrategyDesc" = "Выбор стратегии при превышении лимита IP."
 
 [pages.xray.rules]
 "first" = "Первый"

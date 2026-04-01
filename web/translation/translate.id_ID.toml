@@ -490,6 +490,8 @@
 "statsOutboundUplinkDesc" = "Mengaktifkan pengumpulan statistik untuk lalu lintas unggah dari semua proxy keluar."
 "statsOutboundDownlink" = "Statistik Unduh Keluar"
 "statsOutboundDownlinkDesc" = "Mengaktifkan pengumpulan statistik untuk lalu lintas unduh dari semua proxy keluar."
+"BanStrategy" = "IP limit strategy"
+"BanStrategyDesc" = "Choosing a strategy for blocking IP limit exceedance."
 
 [pages.xray.rules]
 "first" = "Pertama"

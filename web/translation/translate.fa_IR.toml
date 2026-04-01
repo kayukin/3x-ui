@@ -490,6 +490,8 @@
 "statsOutboundUplinkDesc" = "جمع‌آوری آمار برای ترافیک بالارو (آپلود) تمام پروکسی‌های خروجی را فعال می‌کند."
 "statsOutboundDownlink" = "آمار دانلود خروجی"
 "statsOutboundDownlinkDesc" = "جمع‌آوری آمار برای ترافیک پایین‌رو (دانلود) تمام پروکسی‌های خروجی را فعال می‌کند."
+"BanStrategy" = "IP limit strategy"
+"BanStrategyDesc" = "Choosing a strategy for blocking IP limit exceedance."
 
 [pages.xray.rules]
 "first" = "اولین"

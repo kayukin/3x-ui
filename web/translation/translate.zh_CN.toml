@@ -490,6 +490,8 @@
 "statsOutboundUplinkDesc" = "启用所有出站代理的上行流量统计收集。"
 "statsOutboundDownlink" = "出站下载统计"
 "statsOutboundDownlinkDesc" = "启用所有出站代理的下行流量统计收集。"
+"BanStrategy" = "IP 限制策略"
+"BanStrategyDesc" = "选择超出 IP 限制时的封锁策略。"
 
 [pages.xray.rules]
 "first" = "置顶"

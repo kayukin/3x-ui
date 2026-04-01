@@ -3,6 +3,7 @@ package job
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"github.com/mhsanaei/3x-ui/v2/xray"
 )
 
@@ -28,6 +30,12 @@ type IPWithTimestamp struct {
 type CheckClientIpJob struct {
 	lastClear     int64
 	disAllowedIps []string
+
+	settingService    service.SettingService
+	inboundService    service.InboundService
+	tgbotService      service.Tgbot
+	xrayService       service.XrayService
+	ipLimitCandidates map[string]time.Time
 }
 
 var job *CheckClientIpJob
@@ -35,12 +43,19 @@ var job *CheckClientIpJob
 // NewCheckClientIpJob creates a new client IP monitoring job instance.
 func NewCheckClientIpJob() *CheckClientIpJob {
 	job = new(CheckClientIpJob)
+	job.ipLimitCandidates = make(map[string]time.Time)
 	return job
 }
 
 func (j *CheckClientIpJob) Run() {
 	if j.lastClear == 0 {
 		j.lastClear = time.Now().Unix()
+	}
+
+	for email, timestamp := range j.ipLimitCandidates {
+		if time.Since(timestamp) > 2*time.Minute {
+			delete(j.ipLimitCandidates, email)
+		}
 	}
 
 	shouldClearAccessLog := false
@@ -277,6 +292,8 @@ func (j *CheckClientIpJob) updateInboundClientIps(inboundClientIps *model.Inboun
 		return false
 	}
 
+	banStrategy, _ := j.settingService.GetBanStrategy()
+
 	settings := map[string][]model.Client{}
 	json.Unmarshal([]byte(inbound.Settings), &settings)
 	clients := settings["clients"]
@@ -331,6 +348,10 @@ func (j *CheckClientIpJob) updateInboundClientIps(inboundClientIps *model.Inboun
 	shouldCleanLog := false
 	j.disAllowedIps = []string{}
 
+	if banStrategy == "disable-client" {
+		return j.handleDisableClient(inbound, inboundClientIps, clientEmail, limitIp, allIps)
+	}
+
 	// Open log file
 	logIpFile, err := os.OpenFile(xray.GetIPLimitLogPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
@@ -376,6 +397,93 @@ func (j *CheckClientIpJob) updateInboundClientIps(inboundClientIps *model.Inboun
 	}
 
 	return shouldCleanLog
+}
+
+func (j *CheckClientIpJob) handleDisableClient(inbound *model.Inbound, ips *model.InboundClientIps, clientEmail string, limitIp int, ipsWithTS []IPWithTimestamp) bool {
+	ipsJSON, _ := json.Marshal(ipsWithTS)
+
+	ips.Ips = string(ipsJSON)
+	db := database.GetDB()
+	db.Save(ips)
+
+	if len(ipsWithTS) > limitIp {
+		if firstSeen, ok := j.ipLimitCandidates[clientEmail]; ok {
+			if time.Since(firstSeen) > 1*time.Minute {
+				id, err := disableClientByEmail(&inbound.Settings, clientEmail)
+				if err != nil {
+					logger.Errorf("failed to disable client %s: %s", clientEmail, err)
+					return false
+				}
+				delete(j.ipLimitCandidates, clientEmail)
+				needRestart, err := j.inboundService.UpdateInboundClient(inbound, id)
+				if err != nil {
+					logger.Errorf("failed to update inbound client %s: %s", clientEmail, err)
+					return false
+				}
+				if needRestart {
+					j.xrayService.SetToNeedRestart()
+				}
+				j.tgbotService.SendMsgToTgbotAdmins(fmt.Sprintf("Client %s reached IP limit %d for more than 1 minute, disabling. "+
+					"IPs: %s", clientEmail, limitIp, ipsJSON))
+			}
+		} else {
+			j.ipLimitCandidates[clientEmail] = time.Now()
+			j.tgbotService.SendMsgToTgbotAdmins(fmt.Sprintf("Client %s reached IP limit %d adding to candidates for blocking. "+
+				"IPs: %s", clientEmail, limitIp, ipsJSON))
+		}
+	}
+
+	return true
+}
+
+func disableClientByEmail(jsonPtr *string, targetEmail string) (string, error) {
+	id := ""
+	if jsonPtr == nil {
+		return "", fmt.Errorf("nil pointer passed for json string")
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(*jsonPtr), &data); err != nil {
+		return "", fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	clientsRaw, ok := data["clients"]
+	if !ok {
+		return "", fmt.Errorf("key 'clients' not found in JSON")
+	}
+
+	clients, ok := clientsRaw.([]any)
+	if !ok {
+		return "", fmt.Errorf("'clients' is not an array")
+	}
+
+	found := false
+	for _, c := range clients {
+		clientMap, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if clientMap["email"] == targetEmail {
+			clientMap["enable"] = false
+			id = clientMap["id"].(string)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return "", fmt.Errorf("client with email '%s' not found", targetEmail)
+	}
+
+	updatedBytes, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal updated JSON: %w", err)
+	}
+
+	*jsonPtr = string(updatedBytes)
+
+	return id, nil
 }
 
 func (j *CheckClientIpJob) getInboundByEmail(clientEmail string) (*model.Inbound, error) {

@@ -490,6 +490,8 @@
 "statsOutboundUplinkDesc" = "Kích hoạt thu thập thống kê cho lưu lượng tải lên của tất cả các proxy đầu ra."
 "statsOutboundDownlink" = "Thống kê tải xuống đầu ra"
 "statsOutboundDownlinkDesc" = "Kích hoạt thu thập thống kê cho lưu lượng tải xuống của tất cả các proxy đầu ra."
+"BanStrategy" = "IP limit strategy"
+"BanStrategyDesc" = "Choosing a strategy for blocking IP limit exceedance."
 
 [pages.xray.rules]
 "first" = "Đầu tiên"

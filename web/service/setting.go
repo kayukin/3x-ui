@@ -80,6 +80,7 @@ var defaultValueMap = map[string]string{
 	"externalTrafficInformEnable": "false",
 	"externalTrafficInformURI":    "",
 	"xrayOutboundTestUrl":         "https://www.google.com/generate_204",
+	"banStrategy":                 "fail2ban",
 
 	// LDAP defaults
 	"ldapEnable":            "false",
@@ -280,6 +281,14 @@ func (s *SettingService) GetXrayOutboundTestUrl() (string, error) {
 
 func (s *SettingService) SetXrayOutboundTestUrl(url string) error {
 	return s.setString("xrayOutboundTestUrl", url)
+}
+
+func (s *SettingService) GetBanStrategy() (string, error) {
+	return s.getString("banStrategy")
+}
+
+func (s *SettingService) SetBanStrategy(strategy string) error {
+	return s.setString("banStrategy", strategy)
 }
 
 func (s *SettingService) GetListen() (string, error) {

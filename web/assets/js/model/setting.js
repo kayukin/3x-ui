@@ -77,6 +77,8 @@ class AllSetting {
         this.ldapDefaultExpiryDays = 0;
         this.ldapDefaultLimitIP = 0;
 
+        this.banStrategy = "fail2ban";
+
         if (data == null) {
             return
         }

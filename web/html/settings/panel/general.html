@@ -75,6 +75,23 @@
                 </a-select>
             </template>
         </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.xray.BanStrategy" }}</template>
+            <template #description>{{ i18n "pages.xray.BanStrategyDesc"
+                }}</template>
+            <template #control>
+                <a-select v-model="allSetting.banStrategy"
+                          :dropdown-class-name="themeSwitcher.currentTheme"
+                          :style="{ width: '100%' }">
+                    <a-select-option value="fail2ban">
+                        <span>Fail2Ban</span>
+                    </a-select-option>
+                    <a-select-option value="disable-client">
+                        <span>Disable client</span>
+                    </a-select-option>
+                </a-select>
+            </template>
+        </a-setting-list-item>
     </a-collapse-panel>
     <a-collapse-panel key="2" header='{{ i18n "pages.settings.notifications" }}'>
         <a-setting-list-item paddings="small">
